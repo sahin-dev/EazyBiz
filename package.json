@@ -1,0 +1,27 @@
+{
+  "name": "businessos-bangladesh",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Multi-vertical SaaS platform for Bangladesh SMEs using Next.js, NestJS, PostgreSQL, and Prisma.",
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "pnpm --filter @businessos/domain build && pnpm --parallel --filter @businessos/api --filter @businessos/web dev:app",
+    "dev:web": "pnpm --filter @businessos/web dev",
+    "dev:api": "pnpm --filter @businessos/domain build && pnpm --filter @businessos/api dev:app",
+    "build": "pnpm --filter @businessos/domain build && pnpm --filter @businessos/api build && pnpm --filter @businessos/web build",
+    "typecheck": "pnpm --recursive typecheck",
+    "lint": "pnpm --recursive lint",
+    "test:smoke": "node tests/smoke.mjs",
+    "test:unit": "pnpm --filter @businessos/domain build && node --test tests/domain.test.mjs && pnpm --filter @businessos/api test:security",
+    "prisma:generate": "pnpm --filter @businessos/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @businessos/api prisma:migrate",
+    "db:up": "docker compose up -d postgres redis"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

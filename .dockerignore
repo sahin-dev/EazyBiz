@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/dist
+**/.env
+**/.env.*
+.env
+.env.*
+.pnpm-store
+.betopia
+src
+docs
+index.html
+styles.css
+database-schema.sql
+*.log
