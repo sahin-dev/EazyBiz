@@ -26,6 +26,8 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       API_PORT: "4000"
     ports:
       - "127.0.0.1:${API_HOST_PORT:-4000}:4000"
@@ -48,6 +50,7 @@ services:
     environment:
       NODE_ENV: production
       API_URL: http://api:4000
+      WEB_ORIGIN: ${WEB_ORIGIN:?Set WEB_ORIGIN}
     ports:
       - "127.0.0.1:${WEB_HOST_PORT:-3100}:3100"
     depends_on:

@@ -3,6 +3,7 @@ import type { AuthUser } from "../../common/auth/auth-user";
 import { AllowPlatform } from "../../common/auth/allow-platform.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Roles } from "../../common/auth/roles.decorator";
+import { CheckoutSubscriptionDto } from "./checkout-subscription.dto";
 import { CreateSubscriptionPaymentDto } from "./create-subscription-payment.dto";
 import { SubscriptionsService } from "./subscriptions.service";
 import { UpdateModuleDto } from "./update-module.dto";
@@ -26,12 +27,27 @@ export class SubscriptionsController {
 
   @Patch("modules")
   toggleModule(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser, @Body() dto: UpdateModuleDto) {
-    return this.subscriptions.setModule(tenantId, user, dto.moduleId, dto.enabled);
+    return this.subscriptions.setModule(tenantId, user, dto.moduleId, dto.enabled, dto.featureFlags);
   }
 
   @Patch()
   updatePlan(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser, @Body() dto: UpdateSubscriptionDto) {
     return this.subscriptions.updatePlan(tenantId, user, dto);
+  }
+
+  @Post("checkout")
+  checkout(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser, @Body() dto: CheckoutSubscriptionDto) {
+    return this.subscriptions.checkout(tenantId, user, dto);
+  }
+
+  @Post("cancel")
+  cancel(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser) {
+    return this.subscriptions.cancel(tenantId, user);
+  }
+
+  @Post("renew")
+  renew(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser) {
+    return this.subscriptions.renew(tenantId, user);
   }
 
   @Post("payments")

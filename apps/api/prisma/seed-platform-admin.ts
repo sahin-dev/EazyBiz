@@ -26,6 +26,7 @@ async function main() {
       passwordHash,
       role: "platformAdmin",
       status: "active",
+      emailVerifiedAt: new Date(),
     },
     update: {
       tenantId: null,
@@ -34,6 +35,7 @@ async function main() {
       passwordHash,
       role: "platformAdmin",
       status: "active",
+      emailVerifiedAt: new Date(),
     },
   });
 }

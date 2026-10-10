@@ -1,0 +1,7 @@
+{
+  "extends": "../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "incremental": false
+  }
+}

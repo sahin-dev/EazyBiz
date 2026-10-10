@@ -19,10 +19,9 @@ const invalidInvitation = "Invitation is invalid or has expired.";
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  list(tenantId: string) {
-    return this.prisma.user.findMany({
-      where: { tenantId }, select: userSelect, orderBy: [{ name: "asc" }],
-    });
+  async list(tenantId: string) {
+    const memberships = await this.prisma.tenantMembership.findMany({ where: { tenantId }, include: { user: { select: userSelect }, branch: { select: { id: true, name: true } } }, orderBy: { user: { name: "asc" } } });
+    return memberships.map((item) => ({ ...item.user, tenantId, role: item.role, status: item.status, branchId: item.branchId, branch: item.branch }));
   }
 
   async invite(tenantId: string, actor: AuthUser, dto: InviteUserDto) {
@@ -37,6 +36,7 @@ export class UsersService {
           data: { tenantId, branchId, name: dto.name.trim(), email, phone: dto.phone, role: dto.role, status: "invited", passwordHash: secret },
           select: userSelect,
         });
+        await tx.tenantMembership.create({ data: { userId: user.id, tenantId, branchId, role: dto.role, status: "invited" } });
         await tx.auditLog.create({ data: { tenantId, userId: actor.id, action: "user.invited", entityType: "User", entityId: user.id, metadata: { role: dto.role, branchId } } });
         return user;
       });
@@ -69,9 +69,12 @@ export class UsersService {
     const branchId = await this.validBranch(tenantId, dto.branchId);
     if (dto.role === "admin" && branchId) throw new BadRequestException("Administrator access must cover the whole workspace.");
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({ where: { id: targetId }, data: { role: dto.role, branchId }, select: userSelect });
+      const updated = target.tenantId === tenantId
+        ? await tx.user.update({ where: { id: targetId }, data: { role: dto.role, branchId }, select: userSelect })
+        : await tx.user.findUniqueOrThrow({ where: { id: targetId }, select: userSelect });
+      await tx.tenantMembership.update({ where: { userId_tenantId: { userId: targetId, tenantId } }, data: { role: dto.role, branchId } });
       await tx.auditLog.create({ data: { tenantId, userId: actor.id, action: "user.access_changed", entityType: "User", entityId: targetId, metadata: { previousRole: target.role, role: dto.role, branchId } } });
-      return updated;
+      return { ...updated, role: dto.role, branchId };
     });
   }
 
@@ -81,9 +84,14 @@ export class UsersService {
     if (targetId === actor.id && dto.status === "suspended") throw new BadRequestException("You cannot suspend your own account.");
     if (target.status === "invited") throw new BadRequestException("Pending invitations must be accepted before activation.");
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({ where: { id: targetId }, data: { status: dto.status }, select: userSelect });
+      const updated = await tx.user.findUniqueOrThrow({ where: { id: targetId }, select: userSelect });
+      if (dto.status === "active" && target.tenantId === tenantId && target.globalStatus === "suspended") {
+        await tx.user.update({ where: { id: targetId }, data: { status: "active" } });
+      }
+      await tx.tenantMembership.update({ where: { userId_tenantId: { userId: targetId, tenantId } }, data: { status: dto.status } });
+      if (dto.status === "suspended") await tx.authSession.updateMany({ where: { userId: targetId, tenantId, revokedAt: null }, data: { revokedAt: new Date() } });
       await tx.auditLog.create({ data: { tenantId, userId: actor.id, action: "user.status_changed", entityType: "User", entityId: targetId, metadata: { previousStatus: target.status, status: dto.status } } });
-      return updated;
+      return { ...updated, status: dto.status };
     });
   }
 
@@ -99,12 +107,15 @@ export class UsersService {
       select: { id: true, tenantId: true, passwordHash: true },
     });
     if (!user?.tenantId) throw new BadRequestException(invalidInvitation);
+    const tenantId = user.tenantId;
     const expected = this.makeSignature(id, user.passwordHash, expiresAt);
     if (!timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(parts[2], "hex"))) throw new BadRequestException(invalidInvitation);
     const passwordHash = await hash(dto.password, 12);
     const accepted = await this.prisma.$transaction(async (tx) => {
       const result = await tx.user.updateMany({ where: { id, status: "invited", passwordHash: user.passwordHash }, data: { status: "active", passwordHash } });
       if (result.count !== 1) throw new BadRequestException(invalidInvitation);
+      await tx.user.update({ where: { id }, data: { emailVerifiedAt: new Date() } });
+      await tx.tenantMembership.update({ where: { userId_tenantId: { userId: id, tenantId } }, data: { status: "active" } });
       await tx.auditLog.create({ data: { tenantId: user.tenantId, userId: id, action: "user.invitation_accepted", entityType: "User", entityId: id } });
       return tx.user.findUniqueOrThrow({ where: { id }, select: { email: true } });
     });
@@ -127,9 +138,9 @@ export class UsersService {
   }
 
   private async findTarget(tenantId: string, id: string) {
-    const user = await this.prisma.user.findFirst({ where: { id, tenantId }, select: { id: true, role: true, status: true, passwordHash: true } });
-    if (!user) throw new NotFoundException("Account not found.");
-    return user;
+    const membership = await this.prisma.tenantMembership.findUnique({ where: { userId_tenantId: { userId: id, tenantId } }, include: { user: { select: { id: true, tenantId: true, passwordHash: true, status: true } } } });
+    if (!membership) throw new NotFoundException("Account not found.");
+    return { id, tenantId: membership.user.tenantId, role: membership.role, status: membership.status, globalStatus: membership.user.status, passwordHash: membership.user.passwordHash };
   }
 
   private checkAssignableRole(actor: AuthUser, role: string) {

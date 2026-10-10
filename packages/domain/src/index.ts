@@ -1,3 +1,6 @@
+import { businessTypeConfigs, normalizeBusinessType, type BusinessTypeInput } from "./business-config";
+export * from "./business-config";
+
 export type BusinessType =
   | "restaurant"
   | "cafe"
@@ -13,18 +16,27 @@ export type BusinessType =
 export type ModuleId =
   | "pos"
   | "inventory"
+  | "purchasing"
   | "suppliers"
   | "customers"
   | "staff"
   | "reports"
   | "storefront"
   | "websiteBuilder"
+  | "restaurant"
   | "restaurantTables"
   | "restaurantKitchen"
   | "pharmacy"
+  | "grocery"
+  | "retail"
   | "barcodeScale"
+  | "delivery"
   | "crm"
+  | "loyalty"
+  | "accounting"
+  | "payroll"
   | "multiBranch"
+  | "api"
   | "marketing";
 
 export type RoleId =
@@ -39,6 +51,73 @@ export type RoleId =
   | "kitchenStaff"
   | "pharmacist"
   | "deliveryStaff";
+
+export type PermissionId =
+  | "dashboard:view"
+  | "sale:create"
+  | "order:view"
+  | "product:view"
+  | "product:manage"
+  | "inventory:view"
+  | "inventory:adjust"
+  | "supplier:view"
+  | "purchase:create"
+  | "purchase:view"
+  | "customer:view"
+  | "customer:create"
+  | "staff:view"
+  | "staff:manage"
+  | "report:view"
+  | "storefront:view"
+  | "storefront:manage"
+  | "builder:edit"
+  | "table:view"
+  | "table:manage"
+  | "kitchen:view"
+  | "kitchen:update"
+  | "medicine:view"
+  | "prescription:approve"
+  | "barcode:print"
+  | "scale:use"
+  | "crm:view"
+  | "loyalty:manage"
+  | "accounting:view"
+  | "payroll:view"
+  | "branch:view"
+  | "branch:transfer"
+  | "api:use"
+  | "campaign:send"
+  | "promotion:manage";
+
+const managementPermissions: readonly PermissionId[] = [
+  "dashboard:view", "sale:create", "order:view", "product:view", "inventory:view",
+  "product:manage",
+  "supplier:view", "purchase:view", "customer:view", "staff:view", "report:view",
+  "storefront:manage", "table:view", "kitchen:view",
+  "inventory:adjust", "purchase:create", "customer:create", "staff:manage",
+  "storefront:view", "builder:edit", "table:manage", "kitchen:update",
+  "medicine:view", "prescription:approve", "barcode:print", "scale:use",
+  "crm:view", "loyalty:manage", "accounting:view", "payroll:view",
+  "branch:view", "branch:transfer", "api:use", "campaign:send", "promotion:manage",
+];
+
+export const rolePermissions: Record<RoleId, readonly PermissionId[]> = {
+  owner: managementPermissions,
+  admin: managementPermissions,
+  platformAdmin: [],
+  manager: managementPermissions,
+  cashier: ["sale:create", "order:view", "product:view", "customer:view", "table:view"],
+  inventoryManager: ["product:view", "product:manage", "inventory:view", "inventory:adjust", "supplier:view", "purchase:view", "purchase:create"],
+  salesStaff: ["sale:create", "order:view", "product:view", "customer:view", "customer:create", "table:view"],
+  accountant: ["dashboard:view", "order:view", "product:view", "inventory:view", "supplier:view", "purchase:view", "customer:view", "report:view", "accounting:view"],
+  kitchenStaff: ["kitchen:view", "kitchen:update"],
+  pharmacist: ["sale:create", "order:view", "product:view", "customer:view", "customer:create", "medicine:view", "prescription:approve"],
+  deliveryStaff: [],
+};
+
+export function hasPermission(role: string, permission: PermissionId): boolean {
+  return rolePermissions[role as RoleId]?.includes(permission) ?? false;
+}
 
 export type OrderStatus =
   | "Pending"
@@ -74,22 +153,67 @@ export interface ModuleDefinition {
   monthlyPrice: number;
   summary: string;
   businessTypes: BusinessType[];
-  permissions: string[];
+  permissions: PermissionId[];
+  featureFlags: Record<string, boolean>;
+  entitlement: "included" | "addon" | "planned";
   available: boolean;
 }
 
-export type PlanCode = "starter" | "business";
+export type PlanCode = "starter" | "growth" | "business" | "enterprise";
 export type BillingInterval = "monthly" | "yearly";
 
 export interface PlanDefinition {
   code: PlanCode;
   name: string;
   monthlyBasePrice: number;
+  description: string;
+  limits: UsageLimits;
+  includedModules: ModuleId[];
+  highlighted?: boolean;
+}
+
+export interface UsageLimits {
+  branches: number | null;
+  users: number | null;
+  devices: number | null;
+  storageGb: number | null;
+  sms: number | null;
 }
 
 export const planCatalog: PlanDefinition[] = [
-  { code: "starter", name: "Starter", monthlyBasePrice: 0 },
-  { code: "business", name: "Business", monthlyBasePrice: 2490 },
+  {
+    code: "starter",
+    name: "Starter",
+    monthlyBasePrice: 0,
+    description: "Free trial and lightweight operations for a new single-branch business.",
+    limits: { branches: 1, users: 3, devices: 2, storageGb: 1, sms: 100 },
+    includedModules: ["pos"],
+  },
+  {
+    code: "growth",
+    name: "Growth",
+    monthlyBasePrice: 1490,
+    description: "Growing shops that need inventory, purchasing, customers, and basic reports.",
+    limits: { branches: 2, users: 10, devices: 5, storageGb: 5, sms: 1000 },
+    includedModules: ["pos", "inventory", "purchasing", "suppliers", "customers", "reports"],
+  },
+  {
+    code: "business",
+    name: "Business",
+    monthlyBasePrice: 2490,
+    description: "Established teams with storefront, staff, analytics, and modular vertical workflows.",
+    limits: { branches: 5, users: 30, devices: 15, storageGb: 25, sms: 5000 },
+    includedModules: ["pos", "inventory", "purchasing", "suppliers", "customers", "staff", "reports", "storefront", "websiteBuilder"],
+    highlighted: true,
+  },
+  {
+    code: "enterprise",
+    name: "Enterprise",
+    monthlyBasePrice: 7990,
+    description: "Multi-location operations with negotiated limits, integrations, and priority support.",
+    limits: { branches: null, users: null, devices: null, storageGb: null, sms: null },
+    includedModules: ["pos", "inventory", "purchasing", "suppliers", "customers", "staff", "reports", "storefront", "websiteBuilder", "multiBranch", "api"],
+  },
 ];
 
 export const allBusinessTypes: BusinessType[] = [
@@ -106,59 +230,45 @@ export const allBusinessTypes: BusinessType[] = [
 ];
 
 export const moduleCatalog: ModuleDefinition[] = [
-  { id: "pos", name: "POS Core", monthlyPrice: 1200, summary: "Fast billing, tax, discounts, dues, and local payment records.", businessTypes: allBusinessTypes, permissions: ["sale:create"], available: true },
-  { id: "inventory", name: "Inventory", monthlyPrice: 900, summary: "Stock levels, adjustments, movement history, and low-stock alerts.", businessTypes: allBusinessTypes, permissions: ["inventory:view", "inventory:adjust"], available: true },
-  { id: "suppliers", name: "Suppliers & Purchase", monthlyPrice: 650, summary: "Supplier directory, purchase receipts, and payable balances.", businessTypes: allBusinessTypes, permissions: ["supplier:view", "purchase:create"], available: true },
-  { id: "customers", name: "Customers", monthlyPrice: 400, summary: "Customer profiles, balances, and loyalty points.", businessTypes: allBusinessTypes, permissions: ["customer:view", "customer:create"], available: true },
-  { id: "staff", name: "Staff Directory", monthlyPrice: 700, summary: "Employee records, roles, shifts, and salary fields.", businessTypes: allBusinessTypes, permissions: ["staff:view", "staff:manage"], available: true },
-  { id: "reports", name: "Reports", monthlyPrice: 600, summary: "Sales trends, order totals, and payment mix.", businessTypes: allBusinessTypes, permissions: ["report:view"], available: true },
-  { id: "storefront", name: "Online Storefront", monthlyPrice: 1000, summary: "Public catalog and pay-on-delivery or pickup orders.", businessTypes: allBusinessTypes, permissions: ["storefront:view"], available: true },
-  { id: "websiteBuilder", name: "Website Builder", monthlyPrice: 700, summary: "Editable sections, themes, and responsive storefront previews.", businessTypes: allBusinessTypes, permissions: ["builder:edit"], available: true },
-  { id: "restaurantTables", name: "Table Management", monthlyPrice: 500, summary: "Table availability, dine-in orders, and settlement.", businessTypes: ["restaurant", "cafe"], permissions: ["table:view", "table:manage"], available: true },
-  { id: "restaurantKitchen", name: "Kitchen Display", monthlyPrice: 750, summary: "Kitchen tickets and preparation status.", businessTypes: ["restaurant", "cafe", "cloudKitchen", "bakery"], permissions: ["kitchen:view", "kitchen:update"], available: true },
-  { id: "pharmacy", name: "Pharmacy Workflow", monthlyPrice: 850, summary: "Prescription verification and batch dispensing (planned).", businessTypes: ["pharmacy"], permissions: ["medicine:view", "prescription:approve"], available: false },
-  { id: "barcodeScale", name: "Barcode & Scale", monthlyPrice: 550, summary: "Scale and barcode hardware integration (planned).", businessTypes: ["grocery", "superShop", "retail", "electronics", "cosmetics"], permissions: ["barcode:print", "scale:use"], available: false },
-  { id: "crm", name: "CRM & Loyalty", monthlyPrice: 600, summary: "Customer groups and campaigns (planned).", businessTypes: allBusinessTypes, permissions: ["crm:view", "campaign:send"], available: false },
-  { id: "multiBranch", name: "Multi-Branch", monthlyPrice: 1200, summary: "Transfers and branch administration (planned).", businessTypes: allBusinessTypes, permissions: ["branch:view", "branch:transfer"], available: false },
-  { id: "marketing", name: "Marketing", monthlyPrice: 500, summary: "Promotions and campaigns (planned).", businessTypes: allBusinessTypes, permissions: ["promotion:manage"], available: false },
+  { id: "pos", name: "POS", monthlyPrice: 1200, summary: "Fast billing, tax, discounts, dues, and local payment records.", businessTypes: allBusinessTypes, permissions: ["sale:create"], featureFlags: { checkout: true, discounts: true, dueSales: true }, entitlement: "addon", available: true },
+  { id: "inventory", name: "Inventory", monthlyPrice: 900, summary: "Stock levels, adjustments, movement history, and low-stock alerts.", businessTypes: allBusinessTypes, permissions: ["inventory:view", "inventory:adjust"], featureFlags: { stockLedger: true, stockAdjustments: true, lowStockAlerts: true }, entitlement: "addon", available: true },
+  { id: "purchasing", name: "Purchasing", monthlyPrice: 650, summary: "Purchase receipts, stock receiving, landed cost capture, and payable balances.", businessTypes: allBusinessTypes, permissions: ["purchase:view", "purchase:create"], featureFlags: { purchaseReceiving: true, purchaseLedger: true }, entitlement: "addon", available: true },
+  { id: "suppliers", name: "Suppliers", monthlyPrice: 450, summary: "Supplier directory, contact details, balances, and purchase relationship history.", businessTypes: allBusinessTypes, permissions: ["supplier:view"], featureFlags: { supplierDirectory: true }, entitlement: "addon", available: true },
+  { id: "customers", name: "Customers", monthlyPrice: 400, summary: "Customer profiles, balances, and sales history.", businessTypes: allBusinessTypes, permissions: ["customer:view", "customer:create"], featureFlags: { customerDirectory: true, dues: true }, entitlement: "addon", available: true },
+  { id: "staff", name: "Staff", monthlyPrice: 700, summary: "Employee records, roles, shifts, and salary fields.", businessTypes: allBusinessTypes, permissions: ["staff:view", "staff:manage"], featureFlags: { staffDirectory: true, shiftTracking: true }, entitlement: "addon", available: true },
+  { id: "reports", name: "Reports", monthlyPrice: 600, summary: "Sales trends, order totals, returns, inventory, and payment mix.", businessTypes: allBusinessTypes, permissions: ["report:view"], featureFlags: { salesReports: true, inventoryReports: true, paymentReports: true }, entitlement: "addon", available: true },
+  { id: "storefront", name: "Storefront", monthlyPrice: 1000, summary: "Public catalog and pay-on-delivery or pickup orders.", businessTypes: allBusinessTypes, permissions: ["storefront:view", "storefront:manage"], featureFlags: { publicCatalog: true, onlineOrders: true }, entitlement: "addon", available: true },
+  { id: "websiteBuilder", name: "Website Builder", monthlyPrice: 700, summary: "Editable sections, themes, and responsive storefront previews.", businessTypes: allBusinessTypes, permissions: ["builder:edit"], featureFlags: { sectionBuilder: true, publishFlow: true }, entitlement: "addon", available: true },
+  { id: "restaurant", name: "Restaurant", monthlyPrice: 900, summary: "Restaurant workflows, menu prep behavior, table service, and kitchen operations.", businessTypes: ["restaurant", "cafe", "cloudKitchen", "bakery"], permissions: ["table:view", "kitchen:view"], featureFlags: { menuModifiers: true, recipes: true }, entitlement: "addon", available: true },
+  { id: "restaurantTables", name: "Restaurant Tables", monthlyPrice: 500, summary: "Table availability, dine-in orders, and settlement.", businessTypes: ["restaurant", "cafe"], permissions: ["table:view", "table:manage"], featureFlags: { tableService: true }, entitlement: "addon", available: true },
+  { id: "restaurantKitchen", name: "Kitchen Display", monthlyPrice: 750, summary: "Kitchen tickets and preparation status.", businessTypes: ["restaurant", "cafe", "cloudKitchen", "bakery"], permissions: ["kitchen:view", "kitchen:update"], featureFlags: { kitchenTickets: true, prepStatus: true }, entitlement: "addon", available: true },
+  { id: "pharmacy", name: "Pharmacy", monthlyPrice: 850, summary: "Prescription verification, batch dispensing, and expiry-aware medicine workflows.", businessTypes: ["pharmacy"], permissions: ["medicine:view", "prescription:approve"], featureFlags: { prescriptionReview: false, batchExpiry: true }, entitlement: "addon", available: true },
+  { id: "grocery", name: "Grocery", monthlyPrice: 550, summary: "Barcode, weighted products, pack size, and carton conversion workflows.", businessTypes: ["grocery", "superShop"], permissions: ["barcode:print", "scale:use"], featureFlags: { weightedItems: true, cartonConversion: true }, entitlement: "addon", available: true },
+  { id: "retail", name: "Retail", monthlyPrice: 550, summary: "Brand, variant, warranty, barcode, and return workflows for retail stores.", businessTypes: ["retail", "electronics", "cosmetics"], permissions: ["barcode:print"], featureFlags: { variants: true, warranties: true }, entitlement: "addon", available: true },
+  { id: "barcodeScale", name: "Barcode & Scale", monthlyPrice: 550, summary: "Scale and barcode hardware integration.", businessTypes: ["grocery", "superShop", "retail", "electronics", "cosmetics"], permissions: ["barcode:print", "scale:use"], featureFlags: { barcodePrint: false, scaleIntegration: false }, entitlement: "planned", available: false },
+  { id: "delivery", name: "Delivery", monthlyPrice: 650, summary: "Delivery assignment, handoff, and out-for-delivery order tracking.", businessTypes: allBusinessTypes, permissions: ["order:view"], featureFlags: { deliveryDispatch: false, deliveryTracking: false }, entitlement: "planned", available: false },
+  { id: "crm", name: "CRM", monthlyPrice: 600, summary: "Customer groups, lifecycle notes, and campaign audiences.", businessTypes: allBusinessTypes, permissions: ["crm:view"], featureFlags: { customerSegments: false }, entitlement: "planned", available: false },
+  { id: "loyalty", name: "Loyalty", monthlyPrice: 450, summary: "Points, rewards, and customer retention rules.", businessTypes: allBusinessTypes, permissions: ["loyalty:manage"], featureFlags: { points: false, rewards: false }, entitlement: "planned", available: false },
+  { id: "accounting", name: "Accounting", monthlyPrice: 900, summary: "Sales ledger, payable tracking, refunds, dues, and financial exports.", businessTypes: allBusinessTypes, permissions: ["accounting:view"], featureFlags: { ledger: false, exports: false }, entitlement: "planned", available: false },
+  { id: "payroll", name: "Payroll", monthlyPrice: 700, summary: "Salary records, pay periods, deductions, and staff payout reports.", businessTypes: allBusinessTypes, permissions: ["payroll:view"], featureFlags: { salaryRuns: false }, entitlement: "planned", available: false },
+  { id: "multiBranch", name: "Multi-Branch", monthlyPrice: 1200, summary: "Transfers and branch administration.", businessTypes: allBusinessTypes, permissions: ["branch:view", "branch:transfer"], featureFlags: { branchTransfers: false, branchReporting: true }, entitlement: "planned", available: false },
+  { id: "api", name: "API", monthlyPrice: 1100, summary: "External API access, integrations, and operational data sync.", businessTypes: allBusinessTypes, permissions: ["api:use"], featureFlags: { publicApi: false, webhooks: false }, entitlement: "planned", available: false },
+  { id: "marketing", name: "Marketing", monthlyPrice: 500, summary: "Promotions, campaigns, and storefront merchandising.", businessTypes: allBusinessTypes, permissions: ["promotion:manage", "campaign:send"], featureFlags: { promotions: false, campaigns: false }, entitlement: "planned", available: false },
 ];
 
 export function calculateSubscriptionAmount(planCode: PlanCode, moduleIds: ModuleId[], interval: BillingInterval) {
-  const basePrice = planCatalog.find((plan) => plan.code === planCode)?.monthlyBasePrice;
-  if (basePrice === undefined) throw new Error(`Unknown subscription plan: ${planCode}`);
+  const plan = planCatalog.find((item) => item.code === planCode);
+  if (!plan) throw new Error(`Unknown subscription plan: ${planCode}`);
   const modulePrices = new Map(moduleCatalog.map((module) => [module.id, module.monthlyPrice]));
+  const included = new Set(plan.includedModules);
   const moduleTotal = [...new Set(moduleIds)].reduce((total, id) => {
     const price = modulePrices.get(id);
     if (price === undefined) throw new Error(`Unknown subscription module: ${id}`);
-    return total + (moduleCatalog.find((module) => module.id === id)?.available ? price : 0);
+    return total + (moduleCatalog.find((module) => module.id === id)?.available && !included.has(id) ? price : 0);
   }, 0);
   const intervalMultiplier = interval === "yearly" ? 12 : 1;
-  return Math.round((basePrice + moduleTotal) * intervalMultiplier * 100) / 100;
-}
-
-export interface ProductAttributeDefinition {
-  key: string;
-  label: string;
-  type: "text" | "number" | "date" | "boolean" | "select";
-  sensitive?: boolean;
-}
-
-export interface DashboardWidgetDefinition {
-  id: string;
-  label: string;
-  moduleId?: ModuleId;
-}
-
-export interface BusinessTypeConfig {
-  id: BusinessType;
-  name: string;
-  shortName: string;
-  recommendedModules: ModuleId[];
-  dashboardWidgets: DashboardWidgetDefinition[];
-  productAttributes: ProductAttributeDefinition[];
-  orderStatuses: OrderStatus[];
-  storefrontTheme: string;
-  setupTasks: string[];
+  const intervalDiscount = interval === "yearly" ? 0.9 : 1;
+  return Math.round((plan.monthlyBasePrice + moduleTotal) * intervalMultiplier * intervalDiscount * 100) / 100;
 }
 
 export interface TenantSummary {
@@ -186,6 +296,11 @@ export interface ProductSummary {
   attributes: Record<string, string | number | boolean | null>;
 }
 
+export type SaleProduct = Pick<ProductSummary,
+  "id" | "name" | "imageUrl" | "sku" | "barcode" | "category" |
+  "salePrice" | "discountPrice" | "unit" | "featured"
+>;
+
 export function requiresPrescription(attributes: unknown): boolean {
   if (!attributes || typeof attributes !== "object" || Array.isArray(attributes)) return false;
   const value = (attributes as Record<string, unknown>).prescriptionRequired;
@@ -207,113 +322,38 @@ export interface OrderSummary {
   createdAt: string;
 }
 
-export const businessTypeConfigs: Record<BusinessType, BusinessTypeConfig> = {
-  restaurant: {
-    id: "restaurant",
-    name: "Restaurant",
-    shortName: "Restaurant",
-    recommendedModules: ["pos", "inventory", "suppliers", "customers", "restaurantTables", "restaurantKitchen", "storefront", "websiteBuilder", "staff", "reports"],
-    dashboardWidgets: [
-      { id: "sales", label: "Today's Sales" },
-      { id: "orders", label: "Open Orders" },
-      { id: "kitchen", label: "Kitchen Orders", moduleId: "restaurantKitchen" },
-      { id: "tables", label: "Active Tables", moduleId: "restaurantTables" },
-      { id: "lowStock", label: "Low Stock", moduleId: "inventory" },
-    ],
-    productAttributes: [
-      { key: "prepTime", label: "Preparation time", type: "number" },
-      { key: "kitchenStation", label: "Kitchen station", type: "text" },
-      { key: "hasRecipe", label: "Recipe enabled", type: "boolean" },
-    ],
-    orderStatuses: ["Received", "Preparing", "Ready", "Served", "Completed", "Cancelled", "Refunded"],
-    storefrontTheme: "Elegant food menu",
-    setupTasks: ["Create menu items", "Configure kitchen stations", "Add tables", "Publish online menu"],
-  },
-  cafe: {
-    id: "cafe",
-    name: "Cafe",
-    shortName: "Cafe",
-    recommendedModules: ["pos", "inventory", "suppliers", "customers", "restaurantKitchen", "storefront", "websiteBuilder", "staff", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "topItems", label: "Top Drinks" }, { id: "lowStock", label: "Low Stock", moduleId: "inventory" }],
-    productAttributes: [{ key: "prepTime", label: "Preparation time", type: "number" }, { key: "temperature", label: "Hot/cold", type: "select" }],
-    orderStatuses: ["Received", "Preparing", "Ready", "Completed", "Cancelled"],
-    storefrontTheme: "Warm cafe catalog",
-    setupTasks: ["Add drinks", "Add add-ons", "Configure takeaway", "Publish storefront"],
-  },
-  cloudKitchen: {
-    id: "cloudKitchen",
-    name: "Cloud Kitchen",
-    shortName: "Cloud Kitchen",
-    recommendedModules: ["pos", "inventory", "suppliers", "restaurantKitchen", "storefront", "websiteBuilder", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "onlineOrders", label: "Online Orders", moduleId: "storefront" }, { id: "kitchen", label: "Kitchen Orders", moduleId: "restaurantKitchen" }],
-    productAttributes: [{ key: "prepTime", label: "Preparation time", type: "number" }, { key: "virtualBrand", label: "Virtual brand", type: "text" }],
-    orderStatuses: ["Received", "Preparing", "Ready", "Out for delivery", "Completed", "Cancelled"],
-    storefrontTheme: "Delivery-first food",
-    setupTasks: ["Add menu", "Configure delivery zones", "Set prep times", "Publish storefront"],
-  },
-  pharmacy: {
-    id: "pharmacy",
-    name: "Pharmacy",
-    shortName: "Pharmacy",
-    recommendedModules: ["pos", "inventory", "suppliers", "customers", "pharmacy", "storefront", "websiteBuilder", "staff", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "nearExpiry", label: "Near Expiry", moduleId: "pharmacy" }, { id: "prescriptions", label: "Prescription Orders", moduleId: "pharmacy" }, { id: "lowStock", label: "Low Stock Medicines", moduleId: "inventory" }],
-    productAttributes: [
-      { key: "genericName", label: "Generic name", type: "text" },
-      { key: "manufacturer", label: "Manufacturer", type: "text" },
-      { key: "batchNo", label: "Batch number", type: "text", sensitive: true },
-      { key: "expiryDate", label: "Expiry date", type: "date", sensitive: true },
-      { key: "prescriptionRequired", label: "Prescription required", type: "boolean" },
-    ],
-    orderStatuses: ["Pending", "Prescription Required", "Awaiting Pharmacist", "Approved", "Rejected", "Completed", "Cancelled"],
-    storefrontTheme: "Clean healthcare",
-    setupTasks: ["Add medicines", "Configure prescription rules", "Set expiry alerts", "Publish pharmacy store"],
-  },
-  grocery: groceryConfig("grocery", "Grocery Shop", "Grocery"),
-  superShop: groceryConfig("superShop", "Super Shop", "Super Shop"),
-  bakery: {
-    id: "bakery",
-    name: "Bakery",
-    shortName: "Bakery",
-    recommendedModules: ["pos", "inventory", "suppliers", "restaurantKitchen", "storefront", "websiteBuilder", "staff", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "production", label: "Production Batches" }, { id: "expiry", label: "Expiry Alerts" }],
-    productAttributes: [{ key: "productionDate", label: "Production date", type: "date" }, { key: "expiryDate", label: "Expiry date", type: "date" }, { key: "hasRecipe", label: "Recipe enabled", type: "boolean" }],
-    orderStatuses: ["Received", "Preparing", "Ready", "Completed", "Cancelled"],
-    storefrontTheme: "Premium bakery",
-    setupTasks: ["Add baked goods", "Set expiry rules", "Add production batches", "Publish bakery store"],
-  },
-  retail: retailConfig("retail", "Retail", "Retail"),
-  electronics: retailConfig("electronics", "Electronics", "Electronics"),
-  cosmetics: retailConfig("cosmetics", "Cosmetics", "Cosmetics"),
-};
-
-function groceryConfig(id: "grocery" | "superShop", name: string, shortName: string): BusinessTypeConfig {
-  return {
-    id,
-    name,
-    shortName,
-    recommendedModules: ["pos", "inventory", "suppliers", "customers", "barcodeScale", "storefront", "websiteBuilder", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "fastMoving", label: "Fast Moving Products" }, { id: "lowStock", label: "Low Stock", moduleId: "inventory" }],
-    productAttributes: [{ key: "weightBased", label: "Weight based", type: "boolean" }, { key: "packSize", label: "Pack size", type: "text" }, { key: "mrp", label: "MRP", type: "number" }],
-    orderStatuses: ["Pending", "Confirmed", "Processing", "Ready", "Completed", "Cancelled", "Refunded"],
-    storefrontTheme: id === "superShop" ? "Supermarket catalog" : "High-density grocery",
-    setupTasks: ["Add barcodes", "Add suppliers", "Set low stock alerts", "Publish storefront"],
-  };
+export function availableRecommendedModules(businessType: BusinessTypeInput): ModuleId[] {
+  return businessTypeConfigs[normalizeBusinessType(businessType)].recommendedModules.filter((id) => moduleCatalog.some((module) => module.id === id && module.available));
 }
 
-function retailConfig(id: "retail" | "electronics" | "cosmetics", name: string, shortName: string): BusinessTypeConfig {
-  return {
-    id,
-    name,
-    shortName,
-    recommendedModules: ["pos", "inventory", "suppliers", "customers", "barcodeScale", "storefront", "websiteBuilder", "crm", "reports"],
-    dashboardWidgets: [{ id: "sales", label: "Today's Sales" }, { id: "returns", label: "Returns" }, { id: "lowStock", label: "Low Stock", moduleId: "inventory" }],
-    productAttributes: [{ key: "brand", label: "Brand", type: "text" }, { key: "variant", label: "Variant", type: "text" }, { key: "warranty", label: "Warranty", type: "text" }],
-    orderStatuses: ["Pending", "Confirmed", "Processing", "Ready", "Completed", "Cancelled", "Refunded"],
-    storefrontTheme: id === "cosmetics" ? "Lifestyle catalog" : "Visual retail",
-    setupTasks: ["Add products", "Configure variants", "Set return policy", "Publish storefront"],
-  };
+export function isModuleSupportedForBusiness(businessType: BusinessTypeInput, moduleId: ModuleId): boolean {
+  return moduleCatalog.some((module) => module.id === moduleId && module.businessTypes.includes(normalizeBusinessType(businessType)));
 }
 
-export function availableRecommendedModules(businessType: BusinessType): ModuleId[] {
-  return businessTypeConfigs[businessType].recommendedModules.filter((id) => moduleCatalog.some((module) => module.id === id && module.available));
+export function defaultModulesForBusiness(businessType: BusinessTypeInput): readonly ModuleId[] {
+  return businessTypeConfigs[normalizeBusinessType(businessType)].defaultModules;
+}
+
+export function getModuleDefinition(moduleId: ModuleId): ModuleDefinition | undefined {
+  return moduleCatalog.find((module) => module.id === moduleId);
+}
+
+export function moduleFeatureFlags(moduleId: ModuleId, overrides: Record<string, boolean> = {}): Record<string, boolean> {
+  return { ...(getModuleDefinition(moduleId)?.featureFlags ?? {}), ...overrides };
+}
+
+export function isFeatureEnabled(moduleId: ModuleId, featureFlag: string, overrides: Record<string, boolean> = {}): boolean {
+  return moduleFeatureFlags(moduleId, overrides)[featureFlag] === true;
+}
+
+export function planLimits(planCode: PlanCode): UsageLimits {
+  const plan = planCatalog.find((item) => item.code === planCode);
+  if (!plan) throw new Error(`Unknown subscription plan: ${planCode}`);
+  return plan.limits;
+}
+
+export function includedModulesForPlan(planCode: PlanCode): readonly ModuleId[] {
+  const plan = planCatalog.find((item) => item.code === planCode);
+  if (!plan) throw new Error(`Unknown subscription plan: ${planCode}`);
+  return plan.includedModules;
 }

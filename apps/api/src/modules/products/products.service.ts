@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { getBusinessTypeConfig, sanitizeProductAttributes } from "@businessos/domain";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { PrismaService } from "../../common/prisma/prisma.service";
 import { AdjustStockDto } from "./adjust-stock.dto";
@@ -12,15 +13,43 @@ export class ProductsService {
     await this.assertTenant(tenantId);
     return this.prisma.product.findMany({
       where: { tenantId, active: true },
+      select: {
+        id: true, name: true, imageUrl: true, sku: true, barcode: true,
+        category: true, salePrice: true, discountPrice: true, stock: true,
+        minimumStock: true, unit: true, featured: true, attributes: true,
+      },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+    });
+  }
+
+  catalog(tenantId: string) {
+    return this.prisma.product.findMany({
+      where: { tenantId, active: true },
+      select: {
+        id: true, name: true, imageUrl: true, sku: true, barcode: true,
+        category: true, salePrice: true, discountPrice: true, unit: true, featured: true,
+      },
       orderBy: [{ category: "asc" }, { name: "asc" }],
     });
   }
 
   async create(tenantId: string, user: AuthUser, dto: CreateProductDto) {
-    await this.assertTenant(tenantId);
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { businessType: true } });
+    if (!tenant) throw new NotFoundException("Tenant not found.");
+    const config = getBusinessTypeConfig(tenant.businessType);
+    const attributes = sanitizeProductAttributes(tenant.businessType, dto.attributes);
+    for (const definition of config.productAttributes) {
+      const value = attributes[definition.key];
+      if (definition.required && (value === null || value === undefined || value === "")) {
+        throw new BadRequestException(`${definition.label} is required for ${config.name} products.`);
+      }
+      if (definition.type === "number" && typeof value === "number" && !Number.isFinite(value)) {
+        throw new BadRequestException(`${definition.label} must be a valid number.`);
+      }
+    }
     const branchId = user.branchId ?? (await this.defaultBranch(tenantId));
     return this.prisma.$transaction(async (tx) => {
-      const product = await tx.product.create({ data: { tenantId, ...dto } });
+      const product = await tx.product.create({ data: { tenantId, ...dto, attributes } });
       await tx.inventoryBalance.create({
         data: { tenantId, branchId, productId: product.id, quantity: dto.stock, minimumStock: dto.minimumStock },
       });

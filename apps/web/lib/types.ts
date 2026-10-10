@@ -8,7 +8,8 @@ export interface BranchSummary {
 }
 
 export interface SessionData {
-  user: { id: string; tenantId: string | null; branchId: string | null; name: string; email: string; role: string };
+  user: { id: string; tenantId: string | null; branchId: string | null; name: string; email: string; phone?: string | null; role: string; sessionId?: string };
+
   tenant: {
     id: string;
     name: string;
@@ -21,6 +22,7 @@ export interface SessionData {
     serviceRate: number;
     branches: BranchSummary[];
     enabledModules: ModuleId[];
+    moduleEntitlements: Array<{ moduleId: ModuleId; enabled: boolean; featureFlags: Record<string, boolean>; expiresAt: string | null }>;
     storefrontStatus: "draft" | "published";
     subscription: { status: string; currentPeriodEnd: string } | null;
   } | null;
@@ -37,18 +39,46 @@ export interface SubscriptionData {
     currentPeriodEnd: string;
     cancelAtPeriodEnd: boolean;
     payments: SubscriptionPayment[];
+    items: Array<{ id: string; type: string; code: string; name: string; quantity: number; unitAmount: number | string; status: string }>;
+    entitlements: Array<{ id: string; key: string; name: string; limit: number | null; used: number; unit: string; source: string }>;
+    usageRecords: Array<{ id: string; entitlementKey: string; quantity: number; unit: string; source: string; recordedAt: string }>;
+    invoices: InvoiceRecord[];
+    trials: Array<{ id: string; status: string; startedAt: string; endsAt: string; convertedAt: string | null; cancelledAt: string | null }>;
   };
-  plans: Array<{ code: "starter" | "business"; name: string; monthlyBasePrice: number }>;
+  plans: Array<{ code: "starter" | "growth" | "business" | "enterprise"; name: string; monthlyBasePrice: number; description: string; highlighted?: boolean; limits: { branches: number | null; users: number | null; devices: number | null; storageGb: number | null; sms: number | null }; includedModules: ModuleId[] }>;
+  pricing: {
+    plans: SubscriptionData["plans"];
+    modules: SubscriptionData["modules"];
+  };
+  usage: { branches: number; users: number; devices: number; storageGb: number; sms: number };
   modules: Array<{
-    id: string;
+    id: ModuleId;
     name: string;
     monthlyPrice: number;
     summary: string;
+    entitlement: "included" | "addon" | "planned";
+    featureFlags: Record<string, boolean>;
     available: boolean;
     enabled: boolean;
     activatedAt: string | null;
     expiresAt: string | null;
   }>;
+}
+
+export interface InvoiceRecord {
+  id: string;
+  invoiceNo: string;
+  status: string;
+  currency: string;
+  subtotal: number | string;
+  taxAmount: number | string;
+  total: number | string;
+  dueAmount: number | string;
+  issuedAt: string;
+  dueAt: string;
+  paidAt: string | null;
+  lines: Array<{ id: string; itemType: string; code: string; description: string; quantity: number; unitAmount: number | string; total: number | string }>;
+  payments: SubscriptionPayment[];
 }
 
 export interface SubscriptionPayment {
@@ -86,7 +116,7 @@ export interface PlatformTenant {
 }
 
 export interface DashboardData {
-  metrics: { sales: number; orderCount: number; averageOrder: number; dueAmount: number; lowStockCount: number; stockValue: number; customerCount: number; supplierPayable: number };
+  metrics: { sales: number; orderCount: number; averageOrder: number; dueAmount: number; returnCount: number; refundAmount: number; lowStockCount: number; stockValue: number; customerCount: number; supplierPayable: number };
   recentOrders: Array<OrderSummary & { customer: { name: string } | null; items: Array<{ quantity: number }> }>;
   topProducts: Array<{ name: string; quantity: number; sales: number }>;
 }
@@ -128,7 +158,9 @@ export interface PurchaseRecord {
 export interface OrderRecord extends OrderSummary {
   branchId: string;
   paymentStatus: string;
+  paidAmount: number;
   dueAmount: number;
+  payments: Array<{ id: string; method: string; amount: number; reference: string | null; status: string; createdAt: string }>;
   items: Array<{ id: string; productId: string; name: string; quantity: number; unitPrice: number; total: number }>;
 }
 
@@ -156,6 +188,8 @@ export interface InventoryData {
   balances: Array<{ id: string; branchId: string; productId: string; quantity: number; minimumStock: number; product: ProductSummary & { purchasePrice: number }; branch: { id: string; name: string } }>;
   movements: Array<{ id: string; type: string; quantity: number; balanceAfter: number; note?: string; createdAt: string; product: { name: string; sku: string }; branch: { name: string } }>;
 }
+
+export type InventoryAvailability = Array<{ branchId: string; productId: string; quantity: number }>;
 
 export interface StaffRecord {
   id: string;
@@ -218,8 +252,10 @@ export interface StorefrontData {
 
 export interface ReportData {
   range: number;
-  daily: Array<{ date: string; sales: number; orders: number }>;
+  daily: Array<{ date: string; sales: number; orders: number; returns: number }>;
   paymentMix: Array<{ method: string; amount: number }>;
   totalSales: number;
   orderCount: number;
+  returnCount: number;
+  refundAmount: number;
 }

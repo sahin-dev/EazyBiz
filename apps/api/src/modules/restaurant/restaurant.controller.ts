@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { RequireModule } from "../../common/auth/require-module.decorator";
+import { RequirePermission } from "../../common/auth/require-permission.decorator";
 import { Roles } from "../../common/auth/roles.decorator";
 import { CreateTableDto, SetKitchenStatusDto, SetTableStatusDto, SettleTableOrderDto } from "./restaurant.dto";
 import { RestaurantService } from "./restaurant.service";
@@ -12,6 +13,7 @@ export class RestaurantController {
 
   @Get("tables")
   @RequireModule("restaurantTables")
+  @RequirePermission("table:view")
   tables(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser) { return this.restaurant.listTables(tenantId, user); }
 
   @Post("tables")

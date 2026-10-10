@@ -55,6 +55,18 @@ const reads = [
 for (const [name, path, moduleId] of reads) {
   if (modules.has(moduleId)) expectStatus(name, await request(`/tenants/${tenant.id}/${path}`, { headers: auth }), 200);
 }
+if (modules.has("pos")) {
+  expectStatus("missing order return rejected", await request(`/tenants/${tenant.id}/orders/missing-order/return`, {
+    method: "POST", headers: { ...auth, "content-type": "application/json" },
+    body: JSON.stringify({ reason: "Customer returned item", disposition: "writeOff", refundMethod: "Cash" }),
+  }), 404);
+}
+if (modules.has("reports")) {
+  const report = await request(`/tenants/${tenant.id}/reports/overview?days=7`, { headers: auth });
+  expectStatus("return-aware reporting", report, 200);
+  assert.equal(typeof report.data.returnCount, "number");
+  assert.equal(typeof report.data.refundAmount, "number");
+}
 
 const products = modules.has("inventory") ? (await request(`/tenants/${tenant.id}/products`, { headers: auth })).data : [];
 if (products.length && modules.has("pos")) {

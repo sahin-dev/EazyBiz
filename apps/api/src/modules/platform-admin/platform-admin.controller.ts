@@ -38,7 +38,7 @@ export class PlatformAdminController {
     @CurrentUser() user: AuthUser,
     @Body() dto: UpdateModuleDto,
   ) {
-    return this.subscriptions.setModule(tenantId, user, dto.moduleId, dto.enabled);
+    return this.subscriptions.setModule(tenantId, user, dto.moduleId, dto.enabled, dto.featureFlags);
   }
 
   @Get("payments")

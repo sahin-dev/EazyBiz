@@ -3,6 +3,9 @@
 import { ArrowRight, Building2, Eye, EyeOff, Loader2, LockKeyhole, Mail, ShieldCheck, Store } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { workspaceHome } from "@/lib/workspace-home";
+import type { ModuleId } from "@businessos/domain";
 
 type WorkspaceType = "business" | "platform";
 
@@ -21,18 +24,19 @@ export function LoginForm() {
     event.preventDefault();
     setLoading(true);
     setError("");
-    const response = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, workspace }) });
-    const payload = (await response.json()) as { message?: string; user?: { role?: string } };
-    if (!response.ok) {
-      setError(payload.message ?? "Unable to sign in.");
+    try {
+      const response = await fetch("/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password, workspace }) });
+      const payload = (await response.json()) as { message?: string; user?: { role?: string }; tenant?: { enabledModules?: ModuleId[] } };
+      if (!response.ok) throw new Error(payload.message ?? "Unable to sign in.");
+      const next = search.get("next");
+      const fallback = workspaceHome(payload.user?.role ?? "", payload.tenant?.enabledModules ?? []);
+      const scopedNext = next?.startsWith("/") && !next.startsWith("//") && (workspace === "platform" ? next.startsWith("/platform-admin") : !next.startsWith("/platform-admin"));
+      router.replace(scopedNext && next ? next : fallback);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to sign in.");
       setLoading(false);
-      return;
     }
-    const next = search.get("next");
-    const fallback = payload.user?.role === "platformAdmin" ? "/platform-admin" : "/dashboard";
-    const scopedNext = next?.startsWith("/") && !next.startsWith("//") && (workspace === "platform" ? next.startsWith("/platform-admin") : !next.startsWith("/platform-admin"));
-    router.replace(scopedNext && next ? next : fallback);
-    router.refresh();
   }
 
   return (
@@ -68,7 +72,7 @@ export function LoginForm() {
       <button className="button primary auth-submit" disabled={loading}>
         {loading ? <Loader2 className="spin" size={18} /> : <ArrowRight size={18} />} {loading ? "Signing in" : "Sign in"}
       </button>
-      <p className="auth-note">{workspace === "platform" ? "Only platform administrator accounts can enter this console." : "Use the credentials provided by your workspace administrator."}</p>
+      <p className="auth-note">{workspace === "platform" ? <><Link href="/forgot-password">Forgot password?</Link> · Platform administrators only</> : <><Link href="/forgot-password">Forgot password?</Link> · <Link href="/verify-email">Verify email</Link> · <Link href="/signup">Create a workspace</Link></>}</p>
     </form>
   );
 }

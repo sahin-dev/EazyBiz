@@ -48,10 +48,18 @@ async function main() {
           passwordHash,
           role: "owner",
           status: "active",
+          emailVerifiedAt: new Date(),
         },
       });
       createdUser = true;
     }
+
+    const account = await prisma.user.findUniqueOrThrow({ where: { email: owner.email } });
+    await prisma.tenantMembership.upsert({
+      where: { userId_tenantId: { userId: account.id, tenantId: tenant.id } },
+      create: { userId: account.id, tenantId: tenant.id, branchId: tenant.branches[0].id, role: "owner" },
+      update: {},
+    });
 
     const enabledModules = tenant.modules
       .filter((module) => module.enabled)

@@ -124,8 +124,11 @@ model Tenant {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   branches       Branch[]
+  businesses     Business[]
   modules        TenantModule[]
   users          User[]
+  memberships    TenantMembership[]
+  authSessions   AuthSession[]
   products       Product[]
   suppliers      Supplier[]
   customers      Customer[]
@@ -135,6 +138,10 @@ model Tenant {
   stockMovements InventoryMovement[]
   storefront     Storefront?
   subscription   Subscription?
+  entitlements   Entitlement[]
+  usageRecords   UsageRecord[]
+  invoices       Invoice[]
+  trials         Trial[]
   auditLogs      AuditLog[]
   restaurantTables RestaurantTable[]
   kitchenTickets KitchenTicket[]
@@ -142,10 +149,43 @@ model Tenant {
   @@index([status])
 }
 
+model BusinessTypeDefinition {
+  id            String     @id @default(cuid())
+  code          String     @unique
+  configVersion Int        @default(1)
+  status        String     @default("active")
+  createdAt     DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @db.Timestamptz(3)
+  businesses    Business[]
+}
+
+model Business {
+  id             String                 @id @default(cuid())
+  tenantId       String                 @unique
+  tenant         Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: Restrict)
+  businessTypeId String
+  businessType   BusinessTypeDefinition @relation(fields: [businessTypeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  code           String                 @default("MAIN")
+  legalName      String
+  tradingName    String
+  currencyCode   String                 @default("BDT") @db.VarChar(3)
+  status         String                 @default("active")
+  version        BigInt                 @default(1)
+  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime               @updatedAt @db.Timestamptz(3)
+  branches       Branch[]
+
+  @@unique([tenantId, code])
+  @@unique([tenantId, id])
+  @@index([businessTypeId])
+}
+
 model Branch {
   id                String             @id @default(cuid())
   tenantId          String
   tenant            Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  businessId        String?
+  business          Business?          @relation(fields: [tenantId, businessId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   name              String
   code              String
   address           String
@@ -154,6 +194,7 @@ model Branch {
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   users             User[]
+  memberships       TenantMembership[]
   orders            Order[]
   staff             StaffMember[]
   inventoryBalances InventoryBalance[]
@@ -163,13 +204,15 @@ model Branch {
   kitchenTickets    KitchenTicket[]
 
   @@unique([tenantId, code])
+  @@unique([tenantId, id])
   @@index([tenantId, isActive])
+  @@index([tenantId, businessId])
 }
 
 model User {
   id            String     @id @default(cuid())
   tenantId      String?
-  tenant        Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
   branchId      String?
   branch        Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
   name          String
@@ -179,19 +222,76 @@ model User {
   role          UserRole   @default(cashier)
   status        UserStatus @default(active)
   lastLoginAt   DateTime?
+  emailVerifiedAt DateTime?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   createdOrders Order[]    @relation("OrderCreatedBy")
   auditLogs     AuditLog[]
+  memberships   TenantMembership[]
+  authSessions  AuthSession[]
+  accountTokens AccountToken[]
 
   @@index([tenantId, status])
   @@index([branchId])
+}
+
+model TenantMembership {
+  id        String     @id @default(cuid())
+  userId    String
+  tenantId  String
+  branchId  String?
+  role      UserRole
+  status    UserStatus @default(active)
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?    @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([userId, tenantId])
+  @@index([tenantId, status])
+}
+
+model AuthSession {
+  id         String    @id @default(cuid())
+  userId     String
+  tenantId   String?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+  userAgent  String?   @db.VarChar(255)
+
+  @@index([userId, revokedAt, expiresAt])
+}
+
+model AccountToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @db.VarChar(64)
+  purpose    String    @db.VarChar(24)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model RateLimitBucket {
+  key      String   @id @db.VarChar(64)
+  count    Int
+  resetAt  DateTime @db.Timestamptz(3)
+
+  @@index([resetAt])
 }
 
 model TenantModule {
   tenantId    String
   moduleId    String
   enabled     Boolean  @default(true)
+  featureFlags Json     @default("{}")
   activatedAt DateTime @default(now())
   expiresAt   DateTime?
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -211,16 +311,144 @@ model Subscription {
   trialEndsAt       DateTime?
   currentPeriodEnd  DateTime
   cancelAtPeriodEnd Boolean             @default(false)
+  provider          String              @default("manual")
+  providerCustomerId String?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+  items             SubscriptionItem[]
+  entitlements      Entitlement[]
+  usageRecords      UsageRecord[]
+  invoices          Invoice[]
+  trials            Trial[]
   payments          SubscriptionPayment[]
+}
+
+model SubscriptionItem {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  type           String
+  code           String
+  name           String
+  quantity       Int          @default(1)
+  unitAmount     Decimal      @db.Decimal(12, 2)
+  interval       BillingInterval @default(monthly)
+  status         String       @default("active")
+  featureFlags   Json         @default("{}")
+  metadata       Json         @default("{}")
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([subscriptionId, type, code])
+  @@index([subscriptionId, status])
+}
+
+model Entitlement {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  key            String
+  name           String
+  limit          Int?
+  used           Int           @default(0)
+  unit           String
+  source         String
+  expiresAt      DateTime?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId, source])
+}
+
+model UsageRecord {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  entitlementKey String
+  quantity       Int
+  unit           String
+  source         String
+  idempotencyKey String?
+  metadata       Json          @default("{}")
+  recordedAt     DateTime      @default(now())
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, entitlementKey, recordedAt])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceNo      String
+  status         String        @default("draft")
+  currency       String        @default("BDT") @db.VarChar(3)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  taxAmount      Decimal       @default(0) @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  dueAmount      Decimal       @db.Decimal(12, 2)
+  issuedAt       DateTime      @default(now())
+  dueAt          DateTime
+  paidAt         DateTime?
+  metadata       Json          @default("{}")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  lines          InvoiceLine[]
+  payments       SubscriptionPayment[]
+
+  @@unique([tenantId, invoiceNo])
+  @@index([tenantId, status, issuedAt])
+}
+
+model InvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  itemType    String
+  code        String
+  description String
+  quantity    Int      @default(1)
+  unitAmount  Decimal  @db.Decimal(12, 2)
+  total       Decimal  @db.Decimal(12, 2)
+  metadata    Json     @default("{}")
+
+  @@index([invoiceId])
+}
+
+model Trial {
+  id             String        @id @default(cuid())
+  tenantId       String
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  status         String        @default("active")
+  startedAt      DateTime      @default(now())
+  endsAt         DateTime
+  convertedAt    DateTime?
+  cancelledAt    DateTime?
+  metadata       Json          @default("{}")
+
+  @@index([tenantId, status])
 }
 
 model SubscriptionPayment {
   id             String        @id @default(cuid())
   subscriptionId String
   subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  invoiceId      String?
+  invoice        Invoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("BDT") @db.VarChar(3)
+  provider       String        @default("manual")
+  providerPaymentId String?
   method         String
   reference      String?
   status         PaymentStatus @default(pending)
@@ -259,6 +487,7 @@ model Product {
   @@index([tenantId, category])
   @@index([tenantId, barcode])
   @@unique([tenantId, sku])
+  @@unique([tenantId, id])
 }
 
 model InventoryBalance {
@@ -266,8 +495,8 @@ model InventoryBalance {
   tenantId     String
   branchId     String
   productId    String
-  branch       Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch       Branch   @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade, onUpdate: Restrict)
+  product      Product  @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Cascade, onUpdate: Restrict)
   quantity     Decimal  @default(0) @db.Decimal(14, 3)
   minimumStock Decimal  @default(0) @db.Decimal(14, 3)
   updatedAt    DateTime @updatedAt
@@ -281,9 +510,9 @@ model InventoryMovement {
   tenantId      String
   tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branchId      String
-  branch        Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  branch        Branch            @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   productId     String
-  product       Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product       Product           @relation(fields: [tenantId, productId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   type          StockMovementType
   quantity      Decimal           @db.Decimal(14, 3)
   balanceAfter  Decimal           @db.Decimal(14, 3)
@@ -314,6 +543,7 @@ model Supplier {
   purchases    Purchase[]
 
   @@index([tenantId, active])
+  @@unique([tenantId, id])
 }
 
 model Purchase {
@@ -321,9 +551,9 @@ model Purchase {
   tenantId   String
   tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branchId   String
-  branch     Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  branch     Branch         @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   supplierId String
-  supplier   Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplier   Supplier       @relation(fields: [tenantId, supplierId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   purchaseNo String
   invoiceNo  String?
   status     PurchaseStatus @default(draft)
@@ -380,11 +610,13 @@ model Order {
   createdById   String?
   tableId       String?
   tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch        Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  branch        Branch        @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   customer      Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
   createdBy     User?         @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   table         RestaurantTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
   orderNo       String
+  idempotencyKey String?
+  requestFingerprint String?
   source        String        @default("pos")
   orderType     String        @default("counter")
   status        String
@@ -406,6 +638,8 @@ model Order {
   kitchenTicket KitchenTicket?
 
   @@unique([tenantId, orderNo])
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, id])
   @@index([tenantId, branchId, createdAt])
   @@index([tableId])
 }
@@ -415,7 +649,7 @@ model RestaurantTable {
   tenantId  String
   branchId  String
   tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch    Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch    Branch      @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade, onUpdate: Restrict)
   name      String
   capacity  Int         @default(2)
   status    TableStatus @default(available)
@@ -434,13 +668,14 @@ model KitchenTicket {
   branchId  String
   orderId   String        @unique
   tenant    Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch    Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  order     Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branch    Branch        @relation(fields: [tenantId, branchId], references: [tenantId, id], onDelete: Cascade, onUpdate: Restrict)
+  order     Order         @relation(fields: [tenantId, orderId], references: [tenantId, id], onDelete: Cascade, onUpdate: Restrict)
   status    KitchenStatus @default(new)
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
   @@index([tenantId, branchId, status, createdAt])
+  @@unique([tenantId, orderId])
 }
 
 model OrderItem {

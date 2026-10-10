@@ -13,7 +13,7 @@ import type { InventoryData, PurchaseRecord, SessionData, SupplierRecord } from 
 type Tenant = NonNullable<SessionData["tenant"]>;
 type Line = { productId: string; quantity: number; unitCost: number; batchNo: string; expiryDate: string };
 
-export function InventoryWorkspace({ tenant, branchId: assignedBranch, inventory, suppliers, products, purchases }: { tenant: Tenant; branchId: string | null; inventory: InventoryData; suppliers: SupplierRecord[]; products: ProductSummary[]; purchases: PurchaseRecord[] }) {
+export function InventoryWorkspace({ tenant, branchId: assignedBranch, inventory, suppliers, products, purchases }: { tenant: Tenant; branchId: string | null; inventory: InventoryData; suppliers: SupplierRecord[]; products: Array<Pick<ProductSummary, "id" | "name" | "sku">>; purchases: PurchaseRecord[] }) {
   const router = useRouter();
   const branches = assignedBranch ? tenant.branches.filter((item) => item.id === assignedBranch) : tenant.branches;
   const [branchId, setBranchId] = useState(branches[0]?.id ?? "");
@@ -43,7 +43,7 @@ export function InventoryWorkspace({ tenant, branchId: assignedBranch, inventory
   }
 
   return <div className="page-stack">
-    <div className="page-heading"><div><p className="page-kicker">Stock control</p><h1>Inventory</h1><p className="page-description">Live stock by branch with an auditable movement trail.</p></div>{tenant.enabledModules.includes("suppliers") ? <Button onClick={() => { setError(""); setOpen(true); }}><Plus size={17} /> Receive purchase</Button> : null}</div>
+    <div className="page-heading"><div><p className="page-kicker">Stock control</p><h1>Inventory</h1><p className="page-description">Live stock by branch with an auditable movement trail.</p></div>{tenant.enabledModules.includes("purchasing") && tenant.enabledModules.includes("suppliers") ? <Button onClick={() => { setError(""); setOpen(true); }}><Plus size={17} /> Receive purchase</Button> : null}</div>
     {success ? <Notice message={success} /> : null}
     <div className="inventory-summary"><div><span>Active SKUs</span><strong>{balances.length}</strong></div><div><span>Low stock</span><strong>{balances.filter((item) => Number(item.quantity) <= Number(item.minimumStock)).length}</strong></div><div><span>Stock value</span><strong>{formatMoney(balances.reduce((sum, item) => sum + Number(item.quantity) * Number(item.product.purchasePrice), 0))}</strong></div></div>
     <div className="catalog-toolbar"><label className="catalog-search"><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory" aria-label="Search inventory" /></label><label className="catalog-filter"><select value={branchId} onChange={(event) => setBranchId(event.target.value)} aria-label="Select branch">{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label></div>

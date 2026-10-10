@@ -7,6 +7,7 @@ import type { AuthUser } from "../../common/auth/auth-user";
 
 interface JwtPayload {
   sub: string;
+  sid: string;
   tenantId: string | null;
 }
 
@@ -19,13 +20,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<AuthUser> {
-    const user = await this.prisma.user.findFirst({
-      where: payload.tenantId
-        ? { id: payload.sub, tenantId: payload.tenantId, status: "active", tenant: { status: { in: ["trial", "active"] } } }
-        : { id: payload.sub, tenantId: null, role: "platformAdmin", status: "active" },
-      select: { id: true, tenantId: true, branchId: true, name: true, email: true, role: true },
+    if (!payload?.sub || !payload.sid || !Object.prototype.hasOwnProperty.call(payload, "tenantId")) throw new UnauthorizedException();
+    const session = await this.prisma.authSession.findFirst({
+      where: { id: payload.sid, userId: payload.sub, tenantId: payload.tenantId, revokedAt: null, expiresAt: { gt: new Date() } },
+      include: { user: true },
     });
-    if (!user) throw new UnauthorizedException();
-    return user;
+    const user = session?.user;
+    if (!user || user.status !== "active" || !user.emailVerifiedAt) throw new UnauthorizedException();
+    if (payload.tenantId === null) {
+      if (user.role !== "platformAdmin" || user.tenantId !== null) throw new UnauthorizedException();
+      return { id: user.id, tenantId: null, branchId: null, name: user.name, email: user.email, role: "platformAdmin", sessionId: session.id };
+    }
+    const membership = await this.prisma.tenantMembership.findUnique({ where: { userId_tenantId: { userId: user.id, tenantId: payload.tenantId } }, include: { tenant: true, branch: true } });
+    if (!membership || membership.role === "platformAdmin" || membership.status !== "active" || !["trial", "active"].includes(membership.tenant.status) || (membership.branch && !membership.branch.isActive)) throw new UnauthorizedException();
+    return { id: user.id, tenantId: membership.tenantId, branchId: membership.branchId, name: user.name, email: user.email, role: membership.role, sessionId: session.id };
   }
 }

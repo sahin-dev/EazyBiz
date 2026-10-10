@@ -5,14 +5,16 @@ export function Card({
   description,
   action,
   children,
+  className = "",
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
   return (
-    <article className="card">
+    <article className={`card ${className}`}>
       <div className="card-header">
         <div>
           <h2>{title}</h2>

@@ -17,6 +17,7 @@
     "lint": "pnpm --recursive lint",
     "test:smoke": "node tests/smoke.mjs",
     "test:unit": "pnpm --filter @businessos/domain build && node --test tests/domain.test.mjs && pnpm --filter @businessos/api test:security",
+    "test:design-system": "pnpm --filter @businessos/api exec tsx --tsconfig ../../tests/tsconfig.design-system.json --test ../../tests/design-system.test.mjs",
     "prisma:generate": "pnpm --filter @businessos/api prisma:generate",
     "prisma:migrate": "pnpm --filter @businessos/api prisma:migrate",
     "db:up": "docker compose up -d postgres redis"

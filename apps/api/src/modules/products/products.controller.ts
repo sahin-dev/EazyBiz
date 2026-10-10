@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from "@nestjs/common";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { RequireModule } from "../../common/auth/require-module.decorator";
+import { RequirePermission } from "../../common/auth/require-permission.decorator";
 import { Roles } from "../../common/auth/roles.decorator";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { AdjustStockDto } from "./adjust-stock.dto";
@@ -13,8 +14,16 @@ export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
   @Get()
+  @RequirePermission("product:manage")
   list(@Param("tenantId") tenantId: string) {
     return this.products.list(tenantId);
+  }
+
+  @Get("catalog")
+  @RequireModule("pos")
+  @RequirePermission("product:view")
+  catalog(@Param("tenantId") tenantId: string) {
+    return this.products.catalog(tenantId);
   }
 
   @Post()

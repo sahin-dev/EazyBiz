@@ -1,17 +1,17 @@
 import { Body, Controller, ForbiddenException, Get, Param, Post } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
-import { Public } from "../../common/auth/public.decorator";
+import { Roles } from "../../common/auth/roles.decorator";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
-import { CreateTenantDto } from "./create-tenant.dto";
+import { CreateWorkspaceDto } from "./create-tenant.dto";
+import { randomBytes } from "node:crypto";
 import { TenantsService } from "./tenants.service";
+import { CreateBranchDto } from "./create-branch.dto";
 
 @Controller("tenants")
 export class TenantsController {
   constructor(
     private readonly tenants: TenantsService,
-    private readonly config: ConfigService,
   ) {}
 
   @Get()
@@ -26,12 +26,15 @@ export class TenantsController {
   }
 
   @Post()
-  @Public()
+  @Roles("owner", "admin")
   @RateLimit({ limit: 3, windowSeconds: 3600 })
-  create(@Body() dto: CreateTenantDto) {
-    const defaultEnabled = this.config.get<string>("NODE_ENV") === "production" ? "false" : "true";
-    const enabled = this.config.get<string>("PUBLIC_SIGNUP_ENABLED", defaultEnabled) === "true";
-    if (!enabled) throw new ForbiddenException("Public signup is disabled. Contact the platform administrator to create a workspace.");
-    return this.tenants.create(dto);
+  create(@Body() dto: CreateWorkspaceDto, @CurrentUser() user: AuthUser) {
+    return this.tenants.create({ ...dto, email: user.email, ownerName: user.name, password: randomBytes(32).toString("hex") }, user.id);
+  }
+
+  @Post(":tenantId/branches")
+  @Roles("owner", "admin")
+  createBranch(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser, @Body() dto: CreateBranchDto) {
+    return this.tenants.createBranch(tenantId, user.id, dto.name, dto.code, dto.address);
   }
 }

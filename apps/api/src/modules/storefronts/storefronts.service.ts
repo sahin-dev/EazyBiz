@@ -53,7 +53,7 @@ export class StorefrontsService {
 
   async publicStore(slug: string) {
     const storefront = await this.prisma.storefront.findFirst({
-      where: { publishedSlug: slug, status: "published", tenant: { status: { in: ["active", "trial"] }, subscription: { status: { in: ["active", "trialing"] }, currentPeriodEnd: { gt: new Date() } }, modules: { some: { moduleId: "storefront", enabled: true } } } },
+      where: { publishedSlug: slug, status: "published", tenant: { status: { in: ["active", "trial"] }, subscription: { status: { in: ["active", "trialing"] }, currentPeriodEnd: { gt: new Date() } }, modules: { some: { moduleId: "storefront", enabled: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } } } },
       include: {
         tenant: {
           select: {
@@ -94,28 +94,21 @@ export class StorefrontsService {
     return { id: storefront.id, tenantId: storefront.tenantId, status: storefront.status, publishedAt: storefront.publishedAt, tenant: { ...storefront.tenant, products }, ...snapshot };
   }
 
-  async placeOrder(slug: string, dto: PlaceStorefrontOrderDto) {
+  async placeOrder(slug: string, dto: PlaceStorefrontOrderDto, idempotencyKey?: string) {
     const store = await this.publicStore(slug);
     if (!dto.items.length) throw new BadRequestException("Add at least one product.");
     if (!store.tenant.branches.some((branch) => branch.id === dto.branchId)) throw new BadRequestException("Invalid pickup branch.");
     if (dto.fulfillment === "delivery" && (!store.deliveryEnabled || !dto.address?.trim())) throw new BadRequestException("A delivery address is required.");
     if (dto.fulfillment === "pickup" && !store.pickupEnabled) throw new BadRequestException("Pickup is unavailable.");
-    const customer = await this.prisma.customer.upsert({
-      where: { tenantId_phone: { tenantId: store.tenantId, phone: dto.phone } },
-      create: { tenantId: store.tenantId, name: dto.customerName, phone: dto.phone, address: dto.address },
-      update: { name: dto.customerName, address: dto.address || undefined },
-      select: { id: true },
-    });
     const order = await this.orders.create(store.tenantId, null, {
       branchId: dto.branchId,
-      customerId: customer.id,
       source: "storefront",
       orderType: dto.fulfillment,
       paymentMethod: "Due",
       paidAmount: 0,
       notes: [dto.address ? `Address: ${dto.address}` : "", dto.note || ""].filter(Boolean).join(" | "),
       items: dto.items,
-    });
+    }, idempotencyKey, dto, { name: dto.customerName, phone: dto.phone, address: dto.address });
     return { orderNo: order.orderNo, total: order.total, status: order.status };
   }
 }

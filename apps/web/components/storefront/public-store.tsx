@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, MapPin, Minus, Plus, Search, ShoppingBag, X } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useRef, useState } from "react";
 import { roundMoney } from "@businessos/domain";
 import { formatMoney } from "@/lib/format";
 import { ProductImage } from "@/components/ui/product-image";
@@ -34,6 +34,7 @@ export function PublicStore({ store }: { store: PublicStoreData }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const checkoutAttempt = useRef<{ body: string; key: string } | null>(null);
   const categories = ["All", ...new Set(store.tenant.products.map((product) => product.category))];
   const lines = useMemo(() => store.tenant.products.filter((product) => cart[product.id] > 0).map((product) => ({ product, quantity: cart[product.id] })), [cart, store.tenant.products]);
   const subtotal = roundMoney(lines.reduce((sum, line) => sum + roundMoney(price(line.product) * line.quantity), 0));
@@ -46,9 +47,12 @@ export function PublicStore({ store }: { store: PublicStoreData }) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setBusy(true);
     try {
-      const response = await fetch(`/api/storefront/${encodeURIComponent(store.slug)}/orders`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ branchId, customerName: name, phone, fulfillment, address: fulfillment === "delivery" ? address : undefined, note, items: lines.map((line) => ({ productId: line.product.id, quantity: line.quantity })) }) });
+      const body = JSON.stringify({ branchId, customerName: name, phone, fulfillment, address: fulfillment === "delivery" ? address : undefined, note, items: lines.map((line) => ({ productId: line.product.id, quantity: line.quantity })) });
+      if (checkoutAttempt.current?.body !== body) checkoutAttempt.current = { body, key: crypto.randomUUID() };
+      const response = await fetch(`/api/storefront/${encodeURIComponent(store.slug)}/orders`, { method: "POST", headers: { "content-type": "application/json", "idempotency-key": checkoutAttempt.current.key }, body });
       const result = await response.json() as { orderNo?: string; message?: string | string[] };
       if (!response.ok) throw new Error(Array.isArray(result.message) ? result.message.join(" ") : result.message || "Unable to place your order.");
+      checkoutAttempt.current = null;
       setConfirmation(result.orderNo || "Order placed"); setCart({}); setOpen(false);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to place your order."); }
     finally { setBusy(false); }

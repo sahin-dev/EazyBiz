@@ -1,6 +1,6 @@
 "use client";
 
-import { moduleCatalog } from "@businessos/domain";
+import { isModuleSupportedForBusiness, moduleCatalog } from "@businessos/domain";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { clientRequest } from "@/lib/client-api";
@@ -42,7 +42,7 @@ export function PlatformAdminConsole({ tenants, payments }: { tenants: PlatformT
         <div className="card-header"><div><h2>Tenants</h2><p>Manage tenant access and active module entitlements.</p></div></div>
         <div className="admin-tenants">
           {tenants.map((tenant) => {
-            const eligibleModules = moduleCatalog.filter((module) => module.businessTypes.includes(tenant.businessType));
+            const eligibleModules = moduleCatalog.filter((module) => isModuleSupportedForBusiness(tenant.businessType, module.id));
             return (
               <article className="admin-tenant" key={tenant.id}>
                 <div className="admin-tenant-heading">

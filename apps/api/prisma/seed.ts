@@ -94,7 +94,7 @@ async function createBusiness(input: (typeof businesses)[number], passwordHash: 
       phone: input.phone,
       email: input.email,
       plan: "Business",
-      serviceRate: input.businessType === "restaurant" ? 5 : 0,
+      serviceRate: config.pos.serviceRate,
       branches: { create: { name: input.branch, code: "MAIN", address: `${input.branch}, Bangladesh`, phone: input.phone } },
       modules: { create: availableRecommendedModules(input.businessType).map((moduleId) => ({ moduleId })) },
       subscription: {
@@ -109,8 +109,9 @@ async function createBusiness(input: (typeof businesses)[number], passwordHash: 
         create: {
           slug: input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""),
           heroTitle: input.name,
-          tagline: "Quality products, delivered with care.",
-          theme: config.storefrontTheme,
+          tagline: config.storefrontTheme.heroTone,
+          theme: config.storefrontTheme.name,
+          primaryColor: config.storefrontTheme.primaryColor,
           sections: [
             { id: "hero", type: "hero", title: input.name, subtitle: "Order online for delivery or pickup.", visible: true },
             { id: "categories", type: "categories", title: "Shop by category", subtitle: "Find what you need quickly.", visible: true },
@@ -122,9 +123,13 @@ async function createBusiness(input: (typeof businesses)[number], passwordHash: 
     include: { branches: true },
   });
   const branch = tenant.branches[0];
+  const businessType = await prisma.businessTypeDefinition.findUniqueOrThrow({ where: { code: input.businessType } });
+  const business = await prisma.business.create({ data: { tenantId: tenant.id, businessTypeId: businessType.id, legalName: input.name, tradingName: input.name, currencyCode: tenant.currency } });
+  await prisma.branch.update({ where: { id: branch.id }, data: { businessId: business.id } });
   const owner = await prisma.user.create({
-    data: { tenantId: tenant.id, branchId: branch.id, name: input.owner, email: input.email, phone: input.phone, passwordHash, role: "owner" },
+    data: { tenantId: tenant.id, branchId: branch.id, name: input.owner, email: input.email, phone: input.phone, passwordHash, role: "owner", emailVerifiedAt: new Date() },
   });
+  await prisma.tenantMembership.create({ data: { userId: owner.id, tenantId: tenant.id, branchId: branch.id, role: "owner" } });
 
   for (const [name, sku, category, purchasePrice, salePrice, unit, stock, minimumStock] of input.products) {
     const attributes = input.businessType === "pharmacy"

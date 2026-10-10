@@ -5,6 +5,13 @@ import { PrismaService } from "../../common/prisma/prisma.service";
 export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
+  availability(tenantId: string, branchId?: string) {
+    return this.prisma.inventoryBalance.findMany({
+      where: { tenantId, ...(branchId ? { branchId } : {}) },
+      select: { branchId: true, productId: true, quantity: true },
+    });
+  }
+
   async overview(tenantId: string, branchId?: string) {
     const where = { tenantId, ...(branchId ? { branchId } : {}) };
     const [balances, movements] = await Promise.all([

@@ -2,8 +2,10 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtAuthGuard } from "./common/auth/jwt-auth.guard";
-import { ModuleAccessGuard } from "./common/auth/module-access.guard";
+import { ModuleGuard } from "./common/auth/module.guard";
+import { PermissionGuard } from "./common/auth/permission.guard";
 import { RolesGuard } from "./common/auth/roles.guard";
+import { SubscriptionGuard } from "./common/auth/subscription.guard";
 import { TenantAccessGuard } from "./common/auth/tenant-access.guard";
 import { PrismaModule } from "./common/prisma/prisma.module";
 import { RateLimitGuard } from "./common/rate-limit/rate-limit.guard";
@@ -35,7 +37,7 @@ import { UsersModule } from "./modules/users/users.module";
           const origin = String(config.WEB_ORIGIN ?? "");
           if (secret.length < 32 || secret.includes("replace-with")) throw new Error("Set a unique JWT_SECRET of at least 32 characters before production startup.");
           if (!origin.startsWith("https://")) throw new Error("WEB_ORIGIN must use HTTPS in production.");
-          if (config.PUBLIC_SIGNUP_ENABLED === "true") throw new Error("PUBLIC_SIGNUP_ENABLED must not be true in production without a controlled onboarding/rate-limit layer.");
+          if (config.RATE_LIMIT_DISABLED === "true") throw new Error("Rate limiting cannot be disabled in production.");
         }
         return config;
       },
@@ -64,7 +66,9 @@ import { UsersModule } from "./modules/users/users.module";
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: TenantAccessGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: ModuleAccessGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
+    { provide: APP_GUARD, useClass: SubscriptionGuard },
+    { provide: APP_GUARD, useClass: ModuleGuard },
   ],
 })
 export class AppModule {}

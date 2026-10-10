@@ -1,16 +1,16 @@
 "use client";
 
-import { roundMoney, type PaymentMethod, type ProductSummary } from "@businessos/domain";
+import { roundMoney, type PaymentMethod, type SaleProduct } from "@businessos/domain";
 import { Barcode, Check, Package, Plus, Printer, RefreshCw, Search, ShoppingBag, Trash2, Usb } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CustomerRecord, InventoryData, RestaurantTableRecord, SessionData } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CustomerRecord, InventoryAvailability, RestaurantTableRecord, SessionData } from "@/lib/types";
 import { clientRequest } from "@/lib/client-api";
 import { formatMoney } from "@/lib/format";
 import { ProductImage } from "@/components/ui/product-image";
 
 type PosTenant = NonNullable<SessionData["tenant"]>;
-type StockBalance = InventoryData["balances"][number];
+type StockBalance = InventoryAvailability[number];
 type ReceiptWidth = "58mm" | "80mm";
 type PosSettings = { autoPrint: boolean; width: ReceiptWidth; printerName: string };
 type DeviceStatus = { browserPrint: boolean; usb: boolean; serial: boolean; pairedUsb: number; pairedSerial: number; checkedAt: string };
@@ -57,7 +57,7 @@ export function PosCheckout({
   tenant: PosTenant;
   cashierName: string;
   userBranchId: string | null;
-  products: ProductSummary[];
+  products: SaleProduct[];
   customers: CustomerRecord[];
   balances: StockBalance[];
   tables: RestaurantTableRecord[];
@@ -82,6 +82,7 @@ export function PosCheckout({
   const [deviceStatus, setDeviceStatus] = useState<DeviceStatus>({ browserPrint: false, usb: false, serial: false, pairedUsb: 0, pairedSerial: 0, checkedAt: "" });
   const [deviceMessage, setDeviceMessage] = useState("");
   const [lastReceipt, setLastReceipt] = useState<ReceiptData | null>(null);
+  const checkoutAttempt = useRef<{ body: string; key: string } | null>(null);
 
   const stockByProduct = useMemo(
     () => new Map(balances.filter((balance) => balance.branchId === branchId).map((balance) => [balance.productId, Number(balance.quantity)])),
@@ -141,7 +142,7 @@ export function PosCheckout({
     window.localStorage.setItem(settingsKey, JSON.stringify(posSettings));
   }, [posSettings, settingsKey]);
 
-  function setQuantity(product: ProductSummary, quantity: number) {
+  function setQuantity(product: SaleProduct, quantity: number) {
     const available = stockByProduct.get(product.id) ?? 0;
     if (quantity > available) return;
     setQuantities((current) => {
@@ -195,20 +196,24 @@ export function PosCheckout({
 
     setSubmitting(true);
     try {
+      const body = JSON.stringify({
+        branchId,
+        customerId: customerId || undefined,
+        source: "pos",
+        orderType: saleMode === "table" ? "dine_in" : "counter",
+        tableId: saleMode === "table" ? tableId : undefined,
+        paymentMethod: saleMode === "table" ? "Due" : paymentMethod,
+        discount,
+        paidAmount: amountPaid,
+        items: lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
+      });
+      if (checkoutAttempt.current?.body !== body) checkoutAttempt.current = { body, key: crypto.randomUUID() };
       const order = await clientRequest<CreatedOrder>(`/tenants/${tenant.id}/orders`, {
         method: "POST",
-        body: JSON.stringify({
-          branchId,
-          customerId: customerId || undefined,
-          source: "pos",
-          orderType: saleMode === "table" ? "dine_in" : "counter",
-          tableId: saleMode === "table" ? tableId : undefined,
-          paymentMethod: saleMode === "table" ? "Due" : paymentMethod,
-          discount,
-          paidAmount: amountPaid,
-          items: lines.map(({ product, quantity }) => ({ productId: product.id, quantity })),
-        }),
+        headers: { "idempotency-key": checkoutAttempt.current.key },
+        body,
       });
+      checkoutAttempt.current = null;
       const receipt: ReceiptData = {
         orderNo: order.orderNo,
         createdAt: order.createdAt,
@@ -451,7 +456,7 @@ function ReceiptPrintArea({ receipt, width }: { receipt: ReceiptData | null; wid
   );
 }
 
-function effectivePrice(product: ProductSummary) {
+function effectivePrice(product: SaleProduct) {
   const discountPrice = Number(product.discountPrice);
   return discountPrice > 0 && discountPrice < Number(product.salePrice) ? discountPrice : Number(product.salePrice);
 }

@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { RequireModule } from "../../common/auth/require-module.decorator";
+import { RequirePermission } from "../../common/auth/require-permission.decorator";
 import { Roles } from "../../common/auth/roles.decorator";
 import { CreateSupplierDto } from "./supplier.dto";
 import { SuppliersService } from "./suppliers.service";
@@ -12,6 +13,7 @@ export class SuppliersController {
   constructor(private readonly suppliers: SuppliersService) {}
 
   @Get()
+  @RequirePermission("supplier:view")
   list(@Param("tenantId") tenantId: string) {
     return this.suppliers.list(tenantId);
   }

@@ -1,56 +1,74 @@
 "use client";
 
-import { Activity, Boxes, ChefHat, ChevronLeft, CircleHelp, ClipboardList, CreditCard, FileClock, LayoutDashboard, LogOut, Menu, Package, PanelTop, Search, ShoppingCart, Store, Table2, Truck, Users, UsersRound, X, Zap } from "lucide-react";
+import { Activity, Boxes, Building2, ChefHat, ChevronLeft, CircleHelp, ClipboardList, CreditCard, FileClock, LayoutDashboard, LogOut, Menu, Package, PanelTop, Search, ShoppingCart, Store, Table2, Truck, UserRound, Users, UsersRound, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { moduleCatalog, type ModuleId } from "@businessos/domain";
+import { businessTypeConfigs, hasPermission, moduleCatalog, type NavigationItemDefinition, type RoleId } from "@businessos/domain";
 import type { SessionData } from "@/lib/types";
+import { workspaceHome } from "@/lib/workspace-home";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { CommandPalette } from "@/components/ui/overlays";
+import { moduleIsEnabled } from "@/components/ui/feature-gate";
 
-type NavItem = { label: string; href: string; icon: LucideIcon; module?: ModuleId; roles?: string[]; keywords?: string[] };
-type RuntimeNavItem = NavItem & { group: string; locked: boolean };
+type RuntimeNavItem = NavigationItemDefinition & { locked: boolean; iconComponent: LucideIcon };
 
-const navigation: Array<{ title: string; items: NavItem[] }> = [
-  { title: "Overview", items: [{ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, keywords: ["home", "overview"] }] },
-  { title: "Sales", items: [{ label: "Point of sale", href: "/pos", icon: ShoppingCart, module: "pos", keywords: ["checkout", "billing", "receipt"] }, { label: "Orders", href: "/orders", icon: ClipboardList, module: "pos", keywords: ["sales history"] }] },
-  { title: "Catalog", items: [{ label: "Products", href: "/products", icon: Package, module: "inventory", keywords: ["sku", "barcode"] }] },
-  { title: "Inventory", items: [{ label: "Stock", href: "/inventory", icon: Boxes, module: "inventory", keywords: ["movement", "adjustment"] }, { label: "Suppliers", href: "/suppliers", icon: Truck, module: "suppliers", keywords: ["purchase", "vendor"] }] },
-  { title: "People", items: [{ label: "Customers", href: "/customers", icon: UsersRound, module: "customers", keywords: ["crm", "loyalty"] }, { label: "Staff", href: "/staff", icon: Users, module: "staff", roles: ["owner", "admin", "manager"], keywords: ["employees", "payroll"] }] },
-  { title: "Restaurant", items: [{ label: "Kitchen", href: "/kitchen", icon: ChefHat, module: "restaurantKitchen", keywords: ["kds", "kot"] }, { label: "Tables", href: "/tables", icon: Table2, module: "restaurantTables", keywords: ["floor", "dine in"] }] },
-  { title: "Growth", items: [{ label: "Storefront", href: "/storefront", icon: Store, module: "storefront", keywords: ["website", "builder"] }, { label: "Reports", href: "/reports", icon: Activity, module: "reports", keywords: ["analytics", "export"] }, { label: "Subscription", href: "/subscription", icon: CreditCard, roles: ["owner", "admin"], keywords: ["billing", "modules", "marketplace"] }] },
-  { title: "Admin", items: [{ label: "Users & access", href: "/users", icon: Users, roles: ["owner", "admin"], keywords: ["accounts", "roles", "permissions", "invitations"] }, { label: "Audit log", href: "/audit", icon: FileClock, roles: ["owner", "admin"], keywords: ["activity", "events", "security"] }] },
+const iconMap: Record<string, LucideIcon> = {
+  activity: Activity,
+  boxes: Boxes,
+  chefHat: ChefHat,
+  clipboardList: ClipboardList,
+  creditCard: CreditCard,
+  fileClock: FileClock,
+  layoutDashboard: LayoutDashboard,
+  package: Package,
+  shoppingCart: ShoppingCart,
+  store: Store,
+  table2: Table2,
+  truck: Truck,
+  users: Users,
+  usersRound: UsersRound,
+};
+
+const platformNavigation: Array<{ title: string; items: RuntimeNavItem[] }> = [
+  { title: "Platform", items: [{ id: "platform-admin", group: "Admin", label: "Platform admin", href: "/platform-admin", icon: "panelTop", iconComponent: PanelTop, keywords: ["tenants", "billing", "modules"], locked: false }] },
 ];
+
+function groupNavigation(items: readonly NavigationItemDefinition[]): Array<{ title: string; items: NavigationItemDefinition[] }> {
+  const groups = new Map<string, NavigationItemDefinition[]>();
+  for (const item of items) groups.set(item.group, [...(groups.get(item.group) ?? []), item]);
+  return [...groups.entries()].map(([title, groupItems]) => ({ title, items: groupItems }));
+}
 
 export function AppShell({ session, branchId, children }: { session: SessionData; branchId?: string; children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [commandQuery, setCommandQuery] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState(branchId ?? "all");
+  const [signoutError, setSignoutError] = useState("");
   const router = useRouter();
   const pathname = usePathname();
   const tenant = session.tenant;
+  const tenantBusinessType = tenant?.businessType;
   const isPlatformAdmin = session.user.role === "platformAdmin";
-  const groups = useMemo(
-    () => isPlatformAdmin ? [{ title: "Platform", items: [{ label: "Platform admin", href: "/platform-admin", icon: PanelTop, keywords: ["tenants", "billing", "modules"] }] }] : navigation,
-    [isPlatformAdmin],
-  );
+  const groups = useMemo(() => {
+    if (isPlatformAdmin) return platformNavigation;
+    if (!tenantBusinessType) return [];
+    return groupNavigation(businessTypeConfigs[tenantBusinessType].defaultNavigation);
+  }, [isPlatformAdmin, tenantBusinessType]);
   const moduleMap = new Map(moduleCatalog.map((item) => [item.id, item]));
 
   const visibleGroups = useMemo(() => groups.map((group) => ({
     ...group,
     items: group.items
-      .filter((item) => !item.roles || item.roles.includes(session.user.role))
-      .map((item) => ({ ...item, group: group.title, locked: Boolean(item.module && !tenant?.enabledModules.includes(item.module)) })),
-  })).filter((group) => group.items.length), [groups, session.user.role, tenant?.enabledModules]);
+      .filter((item) => (!item.roles || item.roles.includes(session.user.role as RoleId)) && (!item.permission || hasPermission(session.user.role, item.permission)))
+      .filter((item) => !item.moduleId || (tenant ? moduleIsEnabled(tenant, item.moduleId) : false))
+      .map((item) => ({ ...item, locked: false, iconComponent: iconMap[item.icon] ?? Package })),
+  })).filter((group) => group.items.length), [groups, session.user.role, tenant]);
 
   const commands = useMemo<RuntimeNavItem[]>(() => visibleGroups.flatMap((group) => group.items), [visibleGroups]);
-  const filteredCommands = commands.filter((item) => {
-    const term = commandQuery.trim().toLowerCase();
-    return !term || `${item.label} ${item.group} ${item.keywords?.join(" ") ?? ""}`.toLowerCase().includes(term);
-  }).slice(0, 8);
   const activeBranch = tenant?.branches.find((branch) => branch.id === selectedBranchId);
   const workspaceStatus = [
     tenant ? `${tenant.name} is on the ${tenant.plan} plan.` : "Platform administration mode is active.",
@@ -78,9 +96,13 @@ export function AppShell({ session, branchId, children }: { session: SessionData
   }, []);
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
-    router.refresh();
+    setSignoutError("");
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) throw new Error("Unable to sign out. Try again.");
+      router.replace("/login");
+      router.refresh();
+    } catch (cause) { setSignoutError(cause instanceof Error ? cause.message : "Unable to sign out."); }
   }
 
   async function chooseBranch(nextBranchId: string) {
@@ -92,7 +114,6 @@ export function AppShell({ session, branchId, children }: { session: SessionData
 
   function goTo(item: RuntimeNavItem) {
     setCommandOpen(false);
-    setCommandQuery("");
     router.push(item.locked ? "/subscription" : item.href);
   }
 
@@ -101,7 +122,7 @@ export function AppShell({ session, branchId, children }: { session: SessionData
       {mobileOpen ? <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileOpen(false)} /> : null}
       <aside className={`app-sidebar ${mobileOpen ? "open" : ""}`}>
         <div className="sidebar-top">
-          <Link href={isPlatformAdmin ? "/platform-admin" : "/dashboard"} className="sidebar-brand" onClick={() => setMobileOpen(false)}>
+          <Link href={workspaceHome(session.user.role, tenant?.enabledModules ?? [])} className="sidebar-brand" onClick={() => setMobileOpen(false)}>
             <span className="sidebar-logo"><Store size={20} strokeWidth={2.4} /></span>
             <span><strong>BusinessOS</strong><small>WORKSPACE</small></span>
           </Link>
@@ -116,14 +137,16 @@ export function AppShell({ session, branchId, children }: { session: SessionData
           {visibleGroups.map((group) => <div className="nav-group" key={group.title}>
             <span className="nav-group-label">{group.title}</span>
             {group.items.map((item) => {
-              const Icon = item.icon;
+              const Icon = item.iconComponent;
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
-              const moduleName = item.module ? moduleMap.get(item.module)?.name : null;
+              const moduleName = item.moduleId ? moduleMap.get(item.moduleId)?.name : null;
               return <Link key={`${group.title}-${item.label}`} href={item.locked ? "/subscription" : item.href} title={item.locked && moduleName ? `${moduleName} is not active` : item.label} className={`nav-link ${active ? "active" : ""} ${item.locked ? "locked" : ""}`} onClick={() => setMobileOpen(false)}><Icon size={18} strokeWidth={1.8} /><span>{item.label}</span>{item.locked ? <small>Upgrade</small> : null}</Link>;
             })}
           </div>)}
         </nav>
         <div className="sidebar-bottom">
+          <Link className="nav-link" href="/workspaces"><Building2 size={18} /><span>Workspaces</span></Link>
+          <Link className="nav-link" href="/profile"><UserRound size={18} /><span>Profile</span></Link>
           <a className="nav-link" href="mailto:support@businessos.bd"><CircleHelp size={18} /><span>Help & support</span></a>
         </div>
       </aside>
@@ -133,15 +156,16 @@ export function AppShell({ session, branchId, children }: { session: SessionData
           <button className="global-search" type="button" onClick={() => setCommandOpen(true)}><Search size={16} /><span>Search pages and tools</span><kbd>Ctrl K</kbd></button>
           <div className="header-right">
             {tenant ? <label className="branch-switcher"><span className="online-dot" /><select value={selectedBranchId} disabled={Boolean(session.user.branchId)} onChange={(event) => void chooseBranch(event.target.value)} aria-label="Select operational branch"><option value="all">All branches</option>{tenant.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></label> : null}
+            <ThemeToggle />
             <button className="notification-button icon-button" title="Workspace status" aria-label="Workspace status" aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen((value) => !value)}><Activity size={18} /></button>
             <div className="user-summary"><span className="user-avatar">{session.user.name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span><strong>{session.user.name}</strong><small>{session.user.role}</small></span></div>
             <button className="icon-button signout" title="Sign out" aria-label="Sign out" onClick={logout}><LogOut size={18} /></button>
           </div>
           {notificationsOpen ? <div className="notification-panel"><div className="notification-panel-head"><strong>Workspace status</strong><button type="button" className="icon-button compact" aria-label="Close status" onClick={() => setNotificationsOpen(false)}><X size={15} /></button></div>{workspaceStatus.map((item, index) => <div className="notification-item" key={item}><span className={index === 2 && tenant?.storefrontStatus !== "published" ? "alert" : ""}><Activity size={14} /></span><p>{item}</p></div>)}</div> : null}
         </header>
-        <main className="app-content">{children}</main>
+        <main className="app-content">{signoutError ? <div className="form-alert" role="alert">{signoutError}</div> : null}{children}</main>
       </div>
-      {commandOpen ? <div className="command-backdrop" role="presentation" onMouseDown={() => setCommandOpen(false)}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette" onMouseDown={(event) => event.stopPropagation()}><label className="command-input"><Search size={18} /><input autoFocus value={commandQuery} onChange={(event) => setCommandQuery(event.target.value)} placeholder="Search pages and tools" /></label><div className="command-list">{filteredCommands.map((item) => { const Icon = item.icon; return <button type="button" key={`${item.group}-${item.label}`} onClick={() => goTo(item)}><Icon size={17} /><span><strong>{item.label}</strong><small>{item.locked ? "Explore module activation" : item.group}</small></span>{item.locked ? <em>Upgrade</em> : null}</button>; })}{!filteredCommands.length ? <div className="command-empty"><Zap size={22} /><strong>No page found</strong><span>Try a different page or tool name.</span></div> : null}</div><footer className="command-footer"><span>{activeBranch?.name ?? "All branches"}</span><span>Esc to close</span></footer></section></div> : null}
+      {commandOpen ? <CommandPalette items={commands.map((item) => ({ id: item.href, label: item.label, group: item.group, keywords: item.keywords ? [...item.keywords] : undefined, icon: item.iconComponent, badge: item.locked ? "Upgrade" : undefined, description: item.locked ? "Explore module activation" : item.group }))} onSelect={(id) => { const item = commands.find((command) => command.href === id); if (item) goTo(item); }} onClose={() => setCommandOpen(false)} footer={<><span>{activeBranch?.name ?? "All branches"}</span><span>Esc to close</span></>} /> : null}
     </div>
   );
 }

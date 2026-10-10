@@ -1,8 +1,9 @@
-import { Body, Controller, Get, Param, Post, Put } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Param, Post, Put } from "@nestjs/common";
 import type { AuthUser } from "../../common/auth/auth-user";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { RequireModule } from "../../common/auth/require-module.decorator";
+import { RequirePermission } from "../../common/auth/require-permission.decorator";
 import { Roles } from "../../common/auth/roles.decorator";
 import { RateLimit } from "../../common/rate-limit/rate-limit.decorator";
 import { PlaceStorefrontOrderDto, UpdateStorefrontDto } from "./storefront.dto";
@@ -14,19 +15,20 @@ export class StorefrontsController {
 
   @Get("tenants/:tenantId/storefront")
   @RequireModule("storefront")
+  @RequirePermission("storefront:manage")
   get(@Param("tenantId") tenantId: string) {
     return this.storefronts.get(tenantId);
   }
 
   @Put("tenants/:tenantId/storefront")
-  @RequireModule("websiteBuilder")
+  @RequireModule("websiteBuilder", ["sectionBuilder"])
   @Roles("owner", "admin", "manager")
   update(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser, @Body() dto: UpdateStorefrontDto) {
     return this.storefronts.update(tenantId, user, dto);
   }
 
   @Post("tenants/:tenantId/storefront/publish")
-  @RequireModule("websiteBuilder")
+  @RequireModule("websiteBuilder", ["publishFlow"])
   @Roles("owner", "admin", "manager")
   publish(@Param("tenantId") tenantId: string, @CurrentUser() user: AuthUser) {
     return this.storefronts.publish(tenantId, user);
@@ -41,7 +43,7 @@ export class StorefrontsController {
   @Public()
   @RateLimit({ limit: 20, windowSeconds: 300 })
   @Post("storefronts/:slug/orders")
-  placeOrder(@Param("slug") slug: string, @Body() dto: PlaceStorefrontOrderDto) {
-    return this.storefronts.placeOrder(slug, dto);
+  placeOrder(@Param("slug") slug: string, @Body() dto: PlaceStorefrontOrderDto, @Headers("idempotency-key") idempotencyKey?: string) {
+    return this.storefronts.placeOrder(slug, dto, idempotencyKey);
   }
 }
